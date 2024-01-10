@@ -1,2 +1,3 @@
-token = ""
-prefix = "/"
+DISCORD_BOT_TOKEN = ""
+COMMAND_PREFIX = "/"
+USER_LIST_FILE_NAME = "users.txt"
