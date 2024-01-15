@@ -7,6 +7,15 @@ import aiohttp
 
 from config import DISCORD_BOT_TOKEN, COMMAND_PREFIX, USER_LIST_FILE_NAME
 
+"""
+TODO:
+---
+    - [ ] Afficher la liste des commandes
+    - [ ] new-rooms: fonctionnel
+    - [ ] add-user : fonctionnel
+    - [ ] remove-user: fonctionnel
+    - [ ] user-info: fonctionnel
+"""
 
 class TryHackMeUser(typing.TypedDict):
     userId: str
@@ -24,9 +33,11 @@ class UserList:
     def __init__(self, filepath: str) -> None:
         self.users = set()
         self.filepath = filepath
-
-        with open(self.filepath, "r") as file:
-            self.users.update(file.read().splitlines())
+        try:
+            with open(self.filepath, "r") as file:
+                self.users.update(file.read().splitlines())
+        except FileNotFoundError:
+            open(self.filepath, "w").close()
 
     def sync_to_disk(self):
         """Synchronise la liste des utilisateurs sur le disque.
@@ -45,26 +56,16 @@ user_list = UserList(USER_LIST_FILE_NAME)
 async def get_tryhackme_user(username: str) -> TryHackMeUser | None:
     """Renvoie si un utilsateur existe parmis les utilisateurs de TryHackMe.
 
-    Note:
-        Cette fonction utilise du cache, on considère qu'il n'est pas necessaire de
-        re-faire une requête pour un compte déjà recherché.
-
     Args:
         username (str): Le pseudo de l'utilisateur.
 
     Returns:
         bool: True si l'utilisateur existe, False sinon.
     """
-    url = f"https://tryhackme.com/api/similar-users/{username}"
-
-    # L'API nous renvoie une liste de comptes sous forme {userId, username, avatar}
+    url = f"https://tryhackme.com/api/user/exist/{username}"
     async with aiohttp.ClientSession() as session:
         async with session.get(url) as response:
-            for user in await response.json():
-                user: TryHackMeUser
-
-                if user["username"].lower() == username:
-                    return user
+            return (await response.json()).get("success")
 
     return None
 
@@ -92,14 +93,10 @@ async def add_user_command(ctx: commands.Context, username: str):
 
     # Fait un appel à la base de données de tryhackme, peut prend du temps.
     async with ctx.typing():
-        user = await get_tryhackme_user(username)
-
-        if not user:
+        if not await get_tryhackme_user(username):
             await ctx.send(f"Aucun utilisateur trouvé pour le pseudo `{username}`.")
             return
-
-        # Ajout de l'utilisateur à la liste.
-        user_list.users.add(user["username"])
+        user_list.users.add(username)
         user_list.sync_to_disk()
 
         await ctx.send(
@@ -122,7 +119,6 @@ async def remove_user_command(ctx: commands.Context, username: str):
     """
     user_list.users.remove(username)
     user_list.sync_to_disk()
-
     await ctx.send(f"L'utilisateur {username} a été supprimé.")
 
 @bot.command(name="user-list")
@@ -147,6 +143,7 @@ async def user_list_command(ctx: commands.Context):
 @bot.command(name="leaderboard")
 async def leaderboard_command(ctx):
     # todo
+
     return
 
 
@@ -159,6 +156,45 @@ async def user_info_command(ctx, username):
     # todo
     # api doc : https://documenter.getpostman.com/view/18269560/UVCB9j5e#5c827973-cc77-4db5-8e6b-201252c5c5b2
     return
+
+@bot.command(name="new-rooms")
+async def new_rooms_command(ctx):
+    async with ctx.typing():
+        async with aiohttp.ClientSession() as session:
+            async with session.get("https://tryhackme.com/api/new-rooms") as response:
+                rooms = await response.json()
+                
+                embed = discord.Embed(
+                    title="Nouvelles rooms:"
+                    )
+                
+                for room in rooms:
+                    emoji = ":office_worker:" if room["type"] == "walkthrough" else ":triangular_flag_on_post:"
+                    name = room["title"]
+                    desc = room["description"]
+                    img = room["imageURL"]
+                    creator = room["creator"]
+                    url = "https://tryhackme.com/room/" + room["code"]
+
+                    room_embed = discord.Embed(
+                        type="rich",
+                        title=emoji + name,
+                        description="",
+                        color=0xbf0e0e
+                    )
+                    
+                    room_embed.add_field(
+                        name="Auteur: " + creator,
+                        value="\u200B"
+                    )
+                    
+                    room_embed.set_image(
+                        url=img
+                    )
+
+                    embed.add_field(room_embed)
+
+                await ctx.send(embed=embed)
 
 
 bot.run(DISCORD_BOT_TOKEN)
